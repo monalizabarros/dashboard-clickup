@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Entrar · Central de Inteligência Operacional</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F4F7F9; --surface: #FFFFFF; --border: #E2E8EE;
+  --text: #1B2430; --text-muted: #6B7688;
+  --teal: #0E7C7B; --teal-dark: #0A5F5E; --indigo: #4C5FD5; --coral: #FF6B6B;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(140deg, #EAF3F3 0%, var(--bg) 45%, #ECEEFB 100%);
+  font-family: 'Inter', sans-serif; color: var(--text);
+}
+.card {
+  background: var(--surface); border-radius: 24px; padding: 44px 40px;
+  width: 380px; max-width: 92vw;
+  box-shadow: 0 20px 50px rgba(20,40,60,0.10);
+}
+.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+.brand-mark {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--teal), var(--indigo));
+  color: white; display: flex; align-items: center; justify-content: center;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px;
+}
+h1 { font-family: 'Space Grotesk', sans-serif; font-size: 19px; margin: 0; }
+.sub { color: var(--text-muted); font-size: 13px; margin: 2px 0 0; }
+label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); display: block; margin: 16px 0 6px; font-weight: 600; }
+input {
+  width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border);
+  font-size: 14px; font-family: 'Inter', sans-serif;
+}
+input:focus { outline: 2px solid var(--teal); border-color: transparent; }
+button {
+  width: 100%; margin-top: 24px; padding: 13px; border: none; border-radius: 12px;
+  background: var(--teal); color: white; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600; font-size: 14px; cursor: pointer; transition: background 0.15s;
+}
+button:hover { background: var(--teal-dark); }
+button:disabled { opacity: 0.6; cursor: wait; }
+.error {
+  display: none; margin-top: 14px; padding: 10px 12px; border-radius: 10px;
+  background: #FFF0F0; color: var(--coral); font-size: 13px; text-align: center;
+}
+.error.visible { display: block; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">
+    <div class="brand-mark">CIO</div>
+    <div>
+      <h1>Central de Inteligência Operacional</h1>
+      <p class="sub">dados vivos do ClickUp</p>
+    </div>
+  </div>
+
+  <label for="username">Usuário</label>
+  <input id="username" autocomplete="username" autofocus />
+
+  <label for="password">Senha</label>
+  <input id="password" type="password" autocomplete="current-password" />
+
+  <button id="loginBtn">Entrar</button>
+  <div id="error" class="error"></div>
+</div>
+
+<script>
+async function doLogin() {
+  const btn = document.getElementById("loginBtn");
+  const err = document.getElementById("error");
+  err.classList.remove("visible");
+  btn.disabled = true;
+  btn.textContent = "Entrando...";
+  try {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: document.getElementById("username").value.trim(),
+        password: document.getElementById("password").value,
+      }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || "Usuário ou senha inválidos");
+    }
+    window.location.href = "/";
+  } catch (e) {
+    err.textContent = e.message;
+    err.classList.add("visible");
+    btn.disabled = false;
+    btn.textContent = "Entrar";
+  }
+}
+document.getElementById("loginBtn").addEventListener("click", doLogin);
+document.addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+</script>
+</body>
+</html>

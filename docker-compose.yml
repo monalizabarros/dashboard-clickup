@@ -1,0 +1,13 @@
+services:
+  dashboard:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - CLICKUP_API_TOKEN=${CLICKUP_API_TOKEN}
+    volumes:
+      - dashboard_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  dashboard_data:

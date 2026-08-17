@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Painel de Acompanhamento · ClickUp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="/static/vendor/chart.umd.min.js"></script>
+<script src="/static/vendor/chartjs-plugin-datalabels.min.js"></script>
+<script src="/static/vendor/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="/static/style.css?v=25" />
+</head>
+<body>
+
+<div class="app" id="appRoot">
+
+  <button id="sidebarToggle" class="sidebar-toggle" title="Recolher/expandir menu">◀</button>
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">CIO</div>
+      <div>
+        <div class="brand-name">Central de Inteligência Operacional</div>
+        <div class="brand-sub">dados vivos do ClickUp</div>
+      </div>
+    </div>
+
+    <button id="collabBtn" class="btn btn-ghost btn-block" title="Configurar colaboradores" style="display:none">👥 Colaboradores</button>
+
+    <div class="field-group">
+      <label class="field-label">Pastas e listas</label>
+      <div class="hint">Expanda as pastas e marque quantas listas quiser. Marcar a pasta seleciona todas as listas dela.</div>
+      <label class="crit-item select-all-row">
+        <input type="checkbox" id="selectAllLists" class="tree-check" />
+        <b>Selecionar todo o workspace</b>
+      </label>
+      <div id="tree" class="tree"></div>
+      <div id="selectionSummary" class="hint"></div>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Período</label>
+      <select id="periodPreset" class="input">
+        <option value="this_month" selected>Este mês</option>
+        <option value="last_month">Mês passado</option>
+        <option value="last_30">Últimos 30 dias</option>
+        <option value="last_90">Últimos 90 dias</option>
+        <option value="last_180">Últimos 6 meses</option>
+        <option value="this_year">Este ano</option>
+        <option value="custom">Personalizado</option>
+      </select>
+      <div class="period-row">
+        <input type="date" id="periodStart" class="input" />
+        <span class="period-sep">→</span>
+        <input type="date" id="periodEnd" class="input" />
+      </div>
+      <div class="hint">Tasks entram no dashboard se atenderem <b>pelo menos um</b> critério marcado:</div>
+      <label class="crit-item"><input type="checkbox" id="critCreated" class="tree-check" checked /> Criadas no período</label>
+      <label class="crit-item"><input type="checkbox" id="critClosed" class="tree-check" checked /> Fechadas no período</label>
+      <label class="crit-item"><input type="checkbox" id="critHours" class="tree-check" checked /> Com horas registradas no período</label>
+      <div class="hint">Widgets de time tracking mostram apenas horas registradas dentro do período.</div>
+    </div>
+
+    <div class="row-2">
+      <button id="loadTasksBtn" class="btn btn-primary" style="flex:2">Carregar dados</button>
+      <button id="refreshBtn" class="btn btn-ghost" title="Ignorar o cache e buscar dados novos do ClickUp">⟳ Atualizar</button>
+    </div>
+    <div id="taskCount" class="hint"></div>
+
+    <div class="field-group">
+      <label class="field-label">Visualizações salvas</label>
+      <select id="savedDashboards" class="input"></select>
+      <div id="dashInfo" class="hint"></div>
+      <div class="row-2">
+        <button id="loadDashboardBtn" class="btn btn-ghost">Abrir</button>
+        <button id="duplicateDashboardBtn" class="btn btn-ghost">Duplicar</button>
+      </div>
+      <div class="row-2">
+        <button id="editorsBtn" class="btn btn-ghost">Editores</button>
+        <button id="deleteDashboardBtn" class="btn btn-ghost btn-danger">Excluir</button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h1>Acompanhamento de Indicadores</h1>
+        <p class="subtitle">Monte, combine e salve as métricas que importam para o time.</p>
+      </div>
+      <div class="topbar-actions">
+        <div class="user-chip">
+          <span id="userName"></span><span id="userRole" class="role-badge"></span>
+          <button id="usersBtn" class="chip-btn" title="Gerenciar usuários" style="display:none">Usuários</button>
+          <button id="logoutBtn" class="chip-btn" title="Sair">Sair</button>
+        </div>
+        <button id="newDashboardBtn" class="btn btn-ghost" title="Começar uma visualização do zero">🆕 Nova visualização</button>
+        <input id="dashboardName" class="input" placeholder="Nome desta visualização" />
+        <button id="saveDashboardBtn" class="btn btn-primary">Salvar visualização</button>
+        <button id="exportPdfBtn" class="btn btn-ghost">Exportar PDF</button>
+        <button id="addWidgetBtn" class="btn btn-accent">+ Novo widget</button>
+      </div>
+    </header>
+
+    <div id="printHeader" class="print-header">
+      <div class="print-title"></div>
+      <div class="print-meta"></div>
+    </div>
+
+    <div id="periodBanner" class="period-banner"></div>
+
+    <div id="widgetGrid" class="widget-grid"></div>
+    <div id="emptyState" class="empty-state">
+      <div class="empty-badge">＋</div>
+      <h3>Nenhum widget ainda</h3>
+      <p>Selecione pastas/listas, defina o período, carregue os dados e clique em "Novo widget".</p>
+    </div>
+  </main>
+</div>
+
+<div id="modalOverlay" class="modal-overlay">
+  <!-- Modal: gestão de usuários (admin) -->
+  <div id="usersModal" class="modal" style="display:none">
+    <div class="modal-head"><h3>Usuários</h3><button class="modal-close">✕</button></div>
+    <div class="modal-body">
+      <table class="widget-table" id="usersTable">
+        <thead><tr><th>Usuário</th><th>Papel</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="modal-section">
+        <h4>Adicionar usuário</h4>
+        <div class="form-row">
+          <input id="newUserName" class="input" placeholder="Nome de usuário" />
+          <input id="newUserPass" class="input" type="password" placeholder="Senha" />
+          <select id="newUserRole" class="input">
+            <option value="leitor">Leitor</option>
+            <option value="admin">Admin</option>
+          </select>
+          <button id="createUserBtn" class="btn btn-primary">Adicionar</button>
+        </div>
+        <div id="userFormMsg" class="hint"></div>
+      </div>
+      <div class="modal-section">
+        <h4>Histórico semanal</h4>
+        <div class="hint">Os snapshots são gerados automaticamente a cada 6h para semanas fechadas. Use o botão para forçar a geração/backfill agora (pode levar alguns minutos).</div>
+        <button id="runSnapshotsBtn" class="btn btn-ghost btn-block">Gerar snapshots agora (só semanas faltantes)</button>
+        <button id="regenSnapshotsBtn" class="btn btn-ghost btn-block" style="margin-top:8px">🔁 Regenerar TODO o histórico (recalcula tudo)</button>
+        <div id="snapshotsMsg" class="hint"></div>
+      </div>
+      <div class="modal-section">
+        <h4>Backup do banco</h4>
+        <div class="hint">
+          Automático: todo dia às 03:00 (agendado fora do app — ver <code>install_backup_schedule_mac.sh</code>).
+          Envia direto para o Google Drive via API — veja <code>docs/BACKUP_GOOGLE_DRIVE.md</code> para configurar.
+          Este botão dispara um backup extra, na hora.
+        </div>
+        <button id="runBackupBtn" class="btn btn-ghost btn-block">💾 Backup agora</button>
+        <div id="backupMsg" class="hint"></div>
+        <div id="backupStatus" class="hint" style="margin-top:6px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: colaboradores (admin) -->
+  <div id="collabModal" class="modal modal-wide" style="display:none">
+    <div class="modal-head"><h3>Colaboradores</h3><button class="modal-close">✕</button></div>
+    <div class="modal-body">
+      <div class="modal-section collapsible">
+        <h4 class="section-toggle">Times <span class="section-arrow">▾</span></h4>
+        <div class="section-body">
+          <div class="form-row">
+            <input id="newTeamName" class="input" placeholder="Nome do novo time" />
+            <button id="createTeamBtn" class="btn btn-ghost">+ Criar time</button>
+          </div>
+          <div id="teamsList" class="hint"></div>
+        </div>
+      </div>
+
+      <div class="modal-section collapsible">
+        <h4 class="section-toggle">Colaboradores <span class="section-arrow">▾</span></h4>
+        <div class="section-body">
+          <div class="hint">O colaborador é buscado direto dos membros do workspace no ClickUp — garante que bate certinho com quem lança horas.</div>
+          <div class="form-row collab-form-row">
+            <select id="newCollabClickupUser" class="input"><option value="">Buscar colaborador no ClickUp...</option></select>
+            <select id="newCollabTeam" class="input"></select>
+            <input id="newCollabRate" class="input" type="number" min="0" step="0.01" placeholder="Valor/hora (R$)" />
+            <input id="newCollabCapacity" class="input" type="number" min="0" step="0.5" placeholder="Horas/dia" value="8" />
+            <button id="createCollabBtn" class="btn btn-primary">Adicionar</button>
+          </div>
+          <div id="collabFormMsg" class="hint"></div>
+          <table class="widget-table" id="collabTable">
+            <thead><tr><th>Colaborador</th><th>Time</th><th>Valor/hora</th><th>Horas/dia</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="pagination" id="collabPagination"></div>
+        </div>
+      </div>
+
+      <div class="modal-section collapsible">
+        <h4 class="section-toggle">Folgas e férias <span class="section-arrow">▾</span></h4>
+        <div class="section-body">
+          <div class="form-row timeoff-form-row">
+            <select id="newTimeOffCollab" class="input"></select>
+            <select id="newTimeOffType" class="input">
+              <option value="folga">Folga</option>
+              <option value="ferias">Férias</option>
+            </select>
+            <input id="newTimeOffStart" class="input" type="date" />
+            <input id="newTimeOffEnd" class="input" type="date" />
+            <button id="createTimeOffBtn" class="btn btn-ghost">+ Adicionar</button>
+          </div>
+          <div id="timeOffFormMsg" class="hint"></div>
+          <table class="widget-table" id="timeOffTable">
+            <thead><tr><th>Colaborador</th><th>Tipo</th><th>Início</th><th>Fim</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="pagination" id="timeOffPagination"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: editores da visualização -->
+  <div id="editorsModal" class="modal" style="display:none">
+    <div class="modal-head"><h3>Editores da visualização</h3><button class="modal-close">✕</button></div>
+    <div class="modal-body">
+      <div class="hint">Marque quem pode editar <b id="editorsDashName"></b>. O criador e admins sempre podem.</div>
+      <div id="editorsList" class="editors-list"></div>
+      <button id="saveEditorsBtn" class="btn btn-primary btn-block">Salvar editores</button>
+    </div>
+  </div>
+</div>
+
+<template id="widgetTemplate">
+  <div class="widget">
+    <div class="widget-head">
+      <span class="widget-drag" draggable="true" title="Arraste para reordenar">⠿</span>
+      <input class="widget-title input-inline" placeholder="Título do widget" />
+      <div class="widget-controls">
+        <select class="widget-chart-type input-inline"></select>
+        <button class="widget-filter-toggle mini-btn" title="Filtros">🔎 Filtros</button>
+        <button class="widget-export-btn mini-btn" title="Exportar para Excel" style="display:none">⬇ Excel</button>
+      </div>
+      <button class="widget-expand-toggle mini-btn" title="Mostrar/ocultar configurações do widget">▾</button>
+      <button class="widget-remove" title="Remover widget">✕</button>
+    </div>
+    <div class="widget-config">
+      <div class="config-col">
+        <label>Métrica</label>
+        <select class="widget-metric input-inline"></select>
+      </div>
+      <div class="config-col">
+        <label>Agregação</label>
+        <select class="widget-agg input-inline">
+          <option value="sum">Soma</option>
+          <option value="count">Contagem</option>
+          <option value="avg">Média</option>
+        </select>
+      </div>
+      <div class="config-col">
+        <label>Dimensão 1</label>
+        <select class="widget-dim1 input-inline"></select>
+      </div>
+      <div class="config-col">
+        <label>Dimensão 2 (opcional)</label>
+        <select class="widget-dim2 input-inline"></select>
+      </div>
+      <div class="config-col dim-table-only">
+        <label>Dimensão 3 (tabela)</label>
+        <select class="widget-dim3 input-inline"></select>
+      </div>
+      <div class="config-col dim-table-only">
+        <label>Dimensão 4 (tabela)</label>
+        <select class="widget-dim4 input-inline"></select>
+      </div>
+      <div class="config-col dim-table-only">
+        <label>Dimensão 5 (tabela)</label>
+        <select class="widget-dim5 input-inline"></select>
+      </div>
+      <div class="config-col metric-table-only" style="grid-column: 1 / -1;">
+        <label>Métricas extras (tabela)</label>
+        <div class="widget-extra-metrics"></div>
+        <button type="button" class="add-extra-metric-btn mini-btn">+ Adicionar métrica</button>
+      </div>
+      <div class="config-col">
+        <label>Comparar</label>
+        <select class="widget-compare input-inline">
+          <option value="">Não</option>
+          <option value="prev">Período anterior</option>
+        </select>
+      </div>
+      <div class="config-col">
+        <label>Alerta se valor</label>
+        <select class="widget-alert-op input-inline">
+          <option value="">— (sem alerta)</option>
+          <option value=">">Maior que</option>
+          <option value="<">Menor que</option>
+        </select>
+      </div>
+      <div class="config-col">
+        <label>Limite do alerta</label>
+        <input type="number" class="widget-alert-value input-inline" placeholder="ex: 40" step="any" />
+      </div>
+    </div>
+    <div class="widget-badges"></div>
+    <div class="widget-filters" style="display:none">
+      <div class="filters-list"></div>
+      <button class="add-filter-btn mini-btn">+ Adicionar filtro</button>
+    </div>
+    <div class="widget-body">
+      <div class="chart-holder"></div>
+      <div class="widget-table-wrap"></div>
+    </div>
+  </div>
+</template>
+
+<script src="/static/app.js?v=25"></script>
+</body>
+</html>

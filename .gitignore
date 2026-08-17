@@ -1,0 +1,33 @@
+# Segredos e credenciais
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.server
+backend/client_secret.json
+backend/gdrive-key.json
+backend/gdrive-token.json
+cs-app/backend/.env
+
+# Python
+__pycache__/
+*.pyc
+venv/
+cs-app/backend/venv/
+
+# Bancos de dados locais
+*.db
+backend/dashboard.db
+cs-app/backend/cs.db
+backend/backups/
+
+# Node / frontend
+node_modules/
+cs-app/frontend/node_modules/
+cs-app/frontend/dist/
+
+# Sistema
+.DS_Store
+
+# Arquivo grande de backup, não deve ir para o histórico do git
+clickup-dashboard.tar.gz

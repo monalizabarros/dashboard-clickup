@@ -1,0 +1,17 @@
+# Segredos e dados locais — nunca devem entrar na imagem Docker.
+# Em produção, esses arquivos são montados via volume no docker-compose.prod.yml.
+backend/.env
+backend/client_secret.json
+backend/gdrive-key.json
+backend/gdrive-token.json
+backend/dashboard.db
+backend/backups/
+backend/venv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+
+.git
+.DS_Store
+docs/
+backend/.env.server

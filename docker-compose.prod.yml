@@ -1,0 +1,30 @@
+# Compose de PRODUÇÃO — roda no servidor, a partir da imagem pré-buildada
+# (gerada localmente com `docker buildx` e enviada via `docker load`).
+# Não usa `build:` de propósito: a imagem já vem pronta.
+services:
+  clickup-dashboard:
+    image: clickup-dashboard:latest
+    container_name: clickup-dashboard
+    environment:
+      - "TZ=America/Recife"
+    restart: unless-stopped
+    ports:
+      - "10006:8000"
+    volumes:
+      - ./data:/app/data                                  # dashboard.db (bind mount, não volume nomeado)
+      - ./backend/.env:/app/backend/.env:ro
+      - ./backend/client_secret.json:/app/backend/client_secret.json:ro
+      - ./backend/gdrive-token.json:/app/backend/gdrive-token.json
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.clickupdashboard.rule=Host(`clickup.3wings.com.br`)"
+      - "traefik.http.routers.clickupdashboard.entrypoints=websecure"
+      - "traefik.http.routers.clickupdashboard.tls=true"
+      - "traefik.http.routers.clickupdashboard.tls.certresolver=myresolver"
+      - "traefik.http.services.clickupdashboard.loadbalancer.server.port=8000"
+    networks:
+      - traefik_network
+
+networks:
+  traefik_network:
+    external: true
