@@ -1,11 +1,4 @@
 {
   "version": "0.0.1",
-  "configurations": [
-    {
-      "name": "cs-frontend",
-      "runtimeExecutable": "/opt/homebrew/bin/npm",
-      "runtimeArgs": ["--prefix", "cs-app/frontend", "run", "dev", "--", "--port", "5173"],
-      "port": 5173
-    }
-  ]
+  "configurations": []
 }
