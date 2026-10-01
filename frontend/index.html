@@ -9,7 +9,8 @@
 <script src="/static/vendor/chart.umd.min.js"></script>
 <script src="/static/vendor/chartjs-plugin-datalabels.min.js"></script>
 <script src="/static/vendor/xlsx.full.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=25" />
+<script src="/static/vendor/html2canvas.min.js"></script>
+<link rel="stylesheet" href="/static/style.css?v=26" />
 </head>
 <body>
 
@@ -241,6 +242,7 @@
         <select class="widget-chart-type input-inline"></select>
         <button class="widget-filter-toggle mini-btn" title="Filtros">🔎 Filtros</button>
         <button class="widget-export-btn mini-btn" title="Exportar para Excel" style="display:none">⬇ Excel</button>
+        <button class="widget-export-img-btn mini-btn" title="Exportar como imagem (PNG)">🖼 Imagem</button>
       </div>
       <button class="widget-expand-toggle mini-btn" title="Mostrar/ocultar configurações do widget">▾</button>
       <button class="widget-remove" title="Remover widget">✕</button>
@@ -315,6 +317,6 @@
   </div>
 </template>
 
-<script src="/static/app.js?v=25"></script>
+<script src="/static/app.js?v=26"></script>
 </body>
 </html>

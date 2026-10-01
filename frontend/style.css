@@ -637,6 +637,27 @@ body {
   width: 100%;
 }
 
+.print-chart-snapshot {
+  display: none; /* só aparece no @media print, enquanto o PDF é gerado */
+}
+
+/* estado "limpo" usado ao exportar um widget como imagem (html2canvas) */
+.widget.widget-exporting .widget-config,
+.widget.widget-exporting .widget-filters,
+.widget.widget-exporting .widget-drag,
+.widget.widget-exporting .widget-remove,
+.widget.widget-exporting .widget-filter-toggle,
+.widget.widget-exporting .widget-export-btn,
+.widget.widget-exporting .widget-export-img-btn,
+.widget.widget-exporting .widget-expand-toggle,
+.widget.widget-exporting .widget-chart-type,
+.widget.widget-exporting .empty-state { display: none !important; }
+.widget.widget-exporting {
+  box-shadow: none;
+  resize: none;
+}
+.widget.widget-exporting .widget-table-wrap { max-height: none; overflow: visible; }
+
 .chart-holder canvas {
   position: absolute;
   inset: 0;
@@ -998,6 +1019,22 @@ table.widget-table td.delta-down { color: var(--teal-dark); }
   }
 
   .chart-holder { height: 240px; }
+
+  /* Durante a impressão, o canvas "vivo" do gráfico é trocado por um
+     snapshot estático (<img>) gerado em exportPdf(). Isso evita que
+     barras do lado direito de gráficos largos fiquem cortadas: o
+     redimensionamento do <canvas> durante a troca de layout de tela
+     para impressão nem sempre é recalculado a tempo pelo navegador,
+     enquanto a imagem com object-fit:contain sempre cabe inteira. */
+  .chart-holder canvas { display: none !important; }
+  .print-chart-snapshot {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
 
   .widget-table-wrap { max-height: none; overflow: visible; }
 }
