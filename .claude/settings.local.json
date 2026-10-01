@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(docker buildx *)"
+      "Bash(docker buildx *)",
+      "Bash(pkill -f \"uvicorn main:app --reload --port 8000\")",
+      "Bash(git status *)",
+      "Bash(git check-ignore *)",
+      "Bash(git add *)"
     ]
   }
 }

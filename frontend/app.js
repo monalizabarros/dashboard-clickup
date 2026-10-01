@@ -589,6 +589,7 @@ function createWidget(existingConfig) {
     renderWidget(widget);
   });
   widgetEl.querySelector(".widget-export-btn").addEventListener("click", () => exportWidgetExcel(widget));
+  widgetEl.querySelector(".widget-export-img-btn").addEventListener("click", () => exportWidgetImage(widget));
 
   if (existingConfig) {
     widgetEl.querySelector(".widget-title").value = existingConfig.title || "";
@@ -1287,6 +1288,48 @@ function exportWidgetExcel(widget) {
   XLSX.writeFile(wb, `${safeName}.xlsx`);
 }
 
+// Exporta o widget (título + gráfico/tabela) como uma imagem PNG, pronta
+// para colar em e-mail, slide ou documento.
+async function exportWidgetImage(widget) {
+  if (typeof html2canvas === "undefined") {
+    alert("Biblioteca de exportação de imagem não carregou (html2canvas.min.js).");
+    return;
+  }
+  const widgetEl = widget.el;
+  const btn = widgetEl.querySelector(".widget-export-img-btn");
+  const originalLabel = btn.textContent;
+  const title = widgetEl.querySelector(".widget-title").value.trim() || "widget";
+
+  btn.disabled = true;
+  btn.textContent = "Gerando...";
+  widgetEl.classList.add("widget-exporting");
+
+  // garante que o gráfico já esteja desenhado no layout "limpo" (sem o
+  // painel de configuração) antes de capturar a imagem
+  if (widget.chart) widget.chart.resize();
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+  try {
+    const canvas = await html2canvas(widgetEl, {
+      backgroundColor: "#ffffff",
+      scale: Math.min(2, window.devicePixelRatio || 1.5),
+      useCORS: true,
+    });
+    const safeName = title.replace(/[\\/*?:[\]]/g, "").slice(0, 40) || "widget";
+    const link = document.createElement("a");
+    link.download = `${safeName}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  } catch (e) {
+    alert("Não foi possível gerar a imagem do widget: " + e.message);
+  } finally {
+    widgetEl.classList.remove("widget-exporting");
+    if (widget.chart) widget.chart.resize();
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
 function metricLabel(metricId, agg) {
   if (metricId === HIST_METRIC) return `Horas históricas (${{ sum: "soma", avg: "média", count: "contagem" }[agg]})`;
   if (metricId === TIME_METRIC) return `Horas rastreadas (${{ sum: "soma", avg: "média", count: "contagem" }[agg]})`;
@@ -1846,11 +1889,36 @@ function exportPdf() {
   document.querySelector("#printHeader .print-meta").textContent =
     `Período: ${fmt(startStr)} a ${fmt(endStr)} · Gerado em ${new Date().toLocaleString("pt-BR")}`;
 
-  // redimensiona os gráficos para o layout de impressão e volta depois
-  const resizeCharts = () => state.widgets.forEach((w) => w.chart && w.chart.resize());
-  window.addEventListener("beforeprint", resizeCharts, { once: true });
-  window.addEventListener("afterprint", resizeCharts, { once: true });
-  window.print();
+  // Congela cada gráfico como uma imagem estática (snapshot) antes de imprimir.
+  // Motivo: em alguns navegadores o <canvas> do Chart.js não é redimensionado
+  // a tempo quando o layout muda de tela (cards largos) para impressão (grade
+  // de 2 colunas), e isso cortava as barras do lado direito de gráficos largos.
+  // Uma <img> estática com object-fit:contain sempre cabe inteira na área do
+  // widget, então nada fica cortado — mesmo que o recálculo de layout atrase.
+  const snapshots = [];
+  state.widgets.forEach((widget) => {
+    if (!widget.chart) return;
+    const holder = widget.el.querySelector(".chart-holder");
+    if (!holder) return;
+    const img = document.createElement("img");
+    img.className = "print-chart-snapshot";
+    img.src = widget.chart.toBase64Image("image/png", 1);
+    holder.appendChild(img);
+    snapshots.push({ holder, img });
+  });
+
+  const removeSnapshots = () => {
+    snapshots.forEach(({ holder, img }) => { if (holder.contains(img)) holder.removeChild(img); });
+  };
+  // redimensiona os gráficos de volta ao tamanho de tela e remove os snapshots
+  const restoreAfterPrint = () => {
+    removeSnapshots();
+    state.widgets.forEach((w) => w.chart && w.chart.resize());
+  };
+  window.addEventListener("afterprint", restoreAfterPrint, { once: true });
+
+  // espera os snapshots entrarem no DOM antes de abrir a caixa de impressão
+  requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
 }
 
 // ================= Bootstrap =================
