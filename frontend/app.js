@@ -625,9 +625,11 @@ function createWidget(existingConfig) {
 
 /** Mostra/esconde dimensões 3-5 e métricas extras (só fazem sentido em tabela) e o botão de exportar. */
 function updateWidgetChrome(widgetEl) {
-  const isTable = widgetEl.querySelector(".widget-chart-type").value === "table";
+  const chartType = widgetEl.querySelector(".widget-chart-type").value;
+  const isTable = chartType === "table";
+  const supportsExtraMetrics = chartType === "table" || chartType === "bar" || chartType === "line";
   widgetEl.querySelectorAll(".dim-table-only").forEach((el2) => (el2.style.display = isTable ? "" : "none"));
-  widgetEl.querySelectorAll(".metric-table-only").forEach((el2) => (el2.style.display = isTable ? "" : "none"));
+  widgetEl.querySelectorAll(".metric-table-only").forEach((el2) => (el2.style.display = supportsExtraMetrics ? "" : "none"));
   widgetEl.querySelector(".widget-export-btn").style.display = isTable ? "" : "none";
 }
 
@@ -648,6 +650,7 @@ function addExtraMetricRow(widgetEl, widget, existing) {
       <option value="sum">Soma</option>
       <option value="count">Contagem</option>
       <option value="avg">Média</option>
+      <option value="pct">% do total</option>
     </select>
     <button type="button" class="extra-metric-remove" title="Remover métrica">✕</button>
   `;
@@ -862,9 +865,19 @@ function aggregateValues(rows, valueField, agg) {
   const nums = rows.map((r) => Number(r[valueField])).filter((n) => !isNaN(n));
   if (!nums.length) return 0;
   const sum = nums.reduce((a, b) => a + b, 0);
-  if (agg === "sum") return Number(sum.toFixed(2));
   if (agg === "avg") return Number((sum / nums.length).toFixed(2));
-  return rows.length;
+  // "sum" e "pct" partem da mesma soma bruta — "pct" só normaliza depois
+  // (ver toPercentOfTotal), porque precisa do total de TODOS os grupos, não só deste.
+  return Number(sum.toFixed(2));
+}
+
+/** Converte um array de valores brutos (de um mesmo metricConfig) em % do total deles mesmos.
+ *  Usado quando a agregação escolhida é "% do total" — o "total" é a soma de tudo que
+ *  está sendo mostrado para essa métrica neste widget (todas as barras/linhas/linhas da tabela). */
+function toPercentOfTotal(values) {
+  const total = values.reduce((a, b) => a + Number(b), 0);
+  if (!total) return values.map(() => 0);
+  return values.map((v) => Number(((Number(v) / total) * 100).toFixed(1)));
 }
 
 /** Agrupa por até 3 dimensões. Retorna mapa aninhado {d1: {d2: {d3: rows}}} */
@@ -999,9 +1012,9 @@ function renderWidgetInner(widget) {
     ];
     const built = buildTableData(rows, dims, metricConfigs);
 
-    // comparação com período anterior só faz sentido com uma única métrica
-    // (com várias métricas, Anterior/Δ% de qual coluna? evitamos ambiguidade)
-    if (prevRows && metricConfigs.length === 1) {
+    // comparação com período anterior só faz sentido com uma única métrica,
+    // e não com "% do total" (mesma razão explicada nos gráficos de barra/linha)
+    if (prevRows && metricConfigs.length === 1 && metricConfigs[0].agg !== "pct") {
       const prevBuilt = buildTableData(prevRows, dims, metricConfigs);
       const prevMap = {};
       prevBuilt.rows.forEach((r) => { prevMap[JSON.stringify(r.slice(0, dims.length))] = r[dims.length]; });
@@ -1037,12 +1050,62 @@ function renderWidgetInner(widget) {
   const canvas = document.createElement("canvas");
   holder.appendChild(canvas);
 
-  if (dim2 && chartType !== "pie") {
+  const extraMetrics = (chartType === "bar" || chartType === "line") ? collectExtraMetrics(wEl) : [];
+
+  if (extraMetrics.length) {
+    // múltiplas métricas: uma série por métrica, agrupado só pela Dimensão 1.
+    // Ignora Dimensão 2 e "Comparar" aqui — combinar os dois ficaria confuso
+    // (mesma simplificação já usada na Tabela com métricas extras).
+    const metricConfigs = [
+      { valueField, agg, label: metricLabel(metric, agg) },
+      ...extraMetrics.map((m) => ({
+        valueField: m.metric === "__count__" ? null : m.metric,
+        agg: m.agg,
+        label: metricLabel(m.metric, m.agg),
+      })),
+    ];
+    const grouped = groupRows(rows, [dim1]);
+    const labels = Object.keys(grouped).sort();
+    const datasets = metricConfigs.map((mc, i) => {
+      const raw = labels.map((l) => aggregateValues(grouped[l], mc.valueField, mc.agg));
+      return {
+        label: mc.label,
+        data: mc.agg === "pct" ? toPercentOfTotal(raw) : raw,
+        backgroundColor: PALETTE[i % PALETTE.length],
+        borderColor: PALETTE[i % PALETTE.length],
+        borderRadius: chartType === "bar" ? 6 : 0,
+        tension: 0.3,
+        isPercent: mc.agg === "pct",
+      };
+    });
+
+    // alerta avalia sempre a métrica principal (1ª série)
+    if (hasAlert) {
+      const n = datasets[0].data.filter((v) => violates(v)).length;
+      flagAlert(n);
+    }
+
+    widget.chart = new Chart(canvas.getContext("2d"), {
+      type: chartType,
+      data: { labels, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        layout: { padding: { top: 24 } }, // espaço p/ o rótulo da barra mais alta não cortar no topo
+        plugins: {
+          legend: { display: true, position: "bottom" },
+          datalabels: dataLabelsConfig(chartType, false),
+        },
+        scales: { y: { beginAtZero: true, suggestedMax: suggestedMaxFor(datasets) } },
+      },
+    });
+  } else if (dim2 && chartType !== "pie") {
     const grouped = groupRows(rows, [dim1, dim2]);
     const labels = Object.keys(grouped).sort();
 
-    if (prevRows) {
+    if (prevRows && agg !== "pct") {
       // com 2 dimensões a comparação aparece como badge do total (evita gráfico ilegível)
+      // (pulada quando a agregação é "% do total" — comparar percentuais de totais
+      // diferentes entre períodos não tem uma leitura direta)
       const totalOf = (rws) => {
         const g = groupRows(rws, [dim1, dim2]);
         let t = 0;
@@ -1060,22 +1123,35 @@ function renderWidgetInner(widget) {
       borderRadius: chartType === "bar" ? 6 : 0,
       tension: 0.3,
     }));
+    if (agg === "pct") {
+      // normaliza pelo total de TUDO que está no gráfico (todas as séries × todos os labels)
+      const flat = toPercentOfTotal(datasets.flatMap((d) => d.data));
+      datasets.forEach((d, i) => {
+        d.data = flat.slice(i * labels.length, (i + 1) * labels.length);
+        d.isPercent = true;
+      });
+    }
     widget.chart = new Chart(canvas.getContext("2d"), {
       type: chartType,
       data: { labels, datasets },
       options: {
         responsive: true, maintainAspectRatio: false, animation: false,
+        layout: { padding: { top: 24 } },
         plugins: {
           legend: { display: true, position: "bottom" },
           datalabels: dataLabelsConfig(chartType, true),
         },
-        scales: { x: { stacked: chartType === "bar" }, y: { stacked: chartType === "bar", beginAtZero: true } },
+        scales: {
+          x: { stacked: chartType === "bar" },
+          y: { stacked: chartType === "bar", beginAtZero: true, suggestedMax: suggestedMaxForStacked(datasets, labels) },
+        },
       },
     });
   } else {
     const grouped = groupRows(rows, [dim1]);
     let labels = Object.keys(grouped).sort();
-    const values = labels.map((l) => aggregateValues(grouped[l], valueField, agg));
+    let values = labels.map((l) => aggregateValues(grouped[l], valueField, agg));
+    if (agg === "pct") values = toPercentOfTotal(values);
 
     // alerta: destaca em coral os grupos fora do limite
     const violCount = hasAlert ? values.filter((v) => violates(v)).length : 0;
@@ -1089,10 +1165,12 @@ function renderWidgetInner(widget) {
       borderColor: chartType === "line" ? "#0E7C7B" : undefined,
       borderRadius: chartType === "bar" ? 8 : 0,
       tension: 0.3,
+      isPercent: agg === "pct",
     }];
 
     // comparação: série cinza do período anterior (barra/linha) + badge do total
-    if (prevRows) {
+    // (pulada quando a agregação é "% do total" — ver nota equivalente acima)
+    if (prevRows && agg !== "pct") {
       const prevGrouped = groupRows(prevRows, [dim1]);
       if (chartType !== "pie") {
         labels = [...new Set([...labels, ...Object.keys(prevGrouped)])].sort();
@@ -1122,23 +1200,42 @@ function renderWidgetInner(widget) {
       },
       options: {
         responsive: true, maintainAspectRatio: false, animation: false,
+        layout: { padding: { top: chartType === "pie" ? 0 : 24 } },
         plugins: {
           legend: { display: chartType === "pie", position: "bottom" },
           datalabels: dataLabelsConfig(chartType, false),
         },
-        scales: chartType === "pie" ? {} : { y: { beginAtZero: true } },
+        scales: chartType === "pie" ? {} : { y: { beginAtZero: true, suggestedMax: suggestedMaxFor(datasets) } },
       },
     });
   }
 }
 
 /** Configuração dos rótulos de dados por tipo de gráfico. */
+/** Folga no topo do eixo Y (barra/linha simples) para o rótulo da maior barra não ser
+ *  cortado pela borda do gráfico — sem isso, um valor perto do máximo do eixo fica sem
+ *  espaço para o texto "acima" dele. */
+function suggestedMaxFor(datasets) {
+  const max = Math.max(0, ...datasets.flatMap((d) => d.data.map(Number)));
+  return max > 0 ? max * 1.15 : undefined;
+}
+
+/** Mesma ideia, mas somando as séries por label (o topo real de uma barra empilhada
+ *  é a soma de todas as séries daquele label, não o maior valor isolado). */
+function suggestedMaxForStacked(datasets, labels) {
+  const totals = labels.map((_, i) => datasets.reduce((s, d) => s + Number(d.data[i] || 0), 0));
+  const max = Math.max(0, ...totals);
+  return max > 0 ? max * 1.15 : undefined;
+}
+
 function dataLabelsConfig(chartType, stacked) {
   if (typeof ChartDataLabels === "undefined") return { display: false };
-  const fmt = (v) => {
+  const fmt = (v, ctx) => {
     if (typeof v !== "number" && typeof v !== "string") return "";
     const n = Number(v);
-    return isFinite(n) && n ? n.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) : "";
+    if (!isFinite(n) || !n) return "";
+    const formatted = n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+    return ctx && ctx.dataset && ctx.dataset.isPercent ? `${formatted}%` : formatted;
   };
   if (chartType === "pie") {
     return {
@@ -1155,11 +1252,12 @@ function dataLabelsConfig(chartType, stacked) {
       align: "center",
       font: { size: 9, family: "'JetBrains Mono', monospace" },
       formatter: fmt,
-      // esconde rótulos de segmentos muito pequenos para não poluir
+      // esconde só os segmentos realmente minúsculos (sem espaço pro texto não sobrepor);
+      // limite baixo de propósito — threshold alto fazia valores "no limite" sumirem ora sim, ora não
       display: (ctx) => {
         const v = Number(ctx.dataset.data[ctx.dataIndex]);
         const max = Math.max(...ctx.chart.data.datasets.flatMap((d) => d.data.map(Number)));
-        return v > 0 && v >= max * 0.06;
+        return v > 0 && v >= max * 0.025;
       },
     };
   }
@@ -1193,9 +1291,19 @@ function buildTableData(rows, dims, metricConfigs) {
   };
   walk(groupRows(rows, dims), []);
 
+  // "% do total": normaliza cada coluna de métrica pct pelo total DELA MESMA
+  // (soma de todas as linhas da tabela para aquela coluna), depois de montar tudo.
+  metricConfigs.forEach((m, i) => {
+    if (m.agg !== "pct") return;
+    const col = dims.length + i;
+    const pct = toPercentOfTotal(flat.map((r) => r[col]));
+    flat.forEach((r, ri) => { r[col] = pct[ri]; });
+  });
+
   const fieldName = (id) => (allFields().find((f) => f.id === id) || { name: id }).name;
   const headers = [...dims.map(fieldName), ...metricConfigs.map((m) => m.label)];
-  return { headers, rows: flat };
+  const percentCols = new Set(metricConfigs.map((m, i) => (m.agg === "pct" ? dims.length + i : null)).filter((x) => x !== null));
+  return { headers, rows: flat, percentCols };
 }
 
 /** Ordena as linhas segundo o sort do widget (default: métrica, do maior ao menor). */
@@ -1234,7 +1342,10 @@ function tableDataToHtml(built, sort) {
       const arrow = c > 0.5 ? "▲ " : c < -0.5 ? "▼ " : "";
       return `<td class="${cls}">${arrow}${c > 0 ? "+" : ""}${Number(c).toFixed(1).replace(".", ",")}%</td>`;
     }
-    if (i >= numericFrom) return `<td title="${c}">${Number(c).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}</td>`;
+    if (i >= numericFrom) {
+      const formatted = Number(c).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+      return `<td title="${c}">${built.percentCols && built.percentCols.has(i) ? `${formatted}%` : formatted}</td>`;
+    }
     return `<td title="${c}">${c}</td>`;
   };
 
@@ -1330,15 +1441,17 @@ async function exportWidgetImage(widget) {
   }
 }
 
+const AGG_LABELS = { sum: "soma", avg: "média", count: "contagem", pct: "% do total" };
+
 function metricLabel(metricId, agg) {
-  if (metricId === HIST_METRIC) return `Horas históricas (${{ sum: "soma", avg: "média", count: "contagem" }[agg]})`;
-  if (metricId === TIME_METRIC) return `Horas rastreadas (${{ sum: "soma", avg: "média", count: "contagem" }[agg]})`;
-  if (metricId === COLLAB_COST_METRIC) return `Custo (R$) (${{ sum: "soma", avg: "média", count: "contagem" }[agg]})`;
-  if (metricId === COLLAB_CAPACITY_METRIC) return `Capacidade disponível (h) (${{ sum: "soma", avg: "média", count: "contagem" }[agg]})`;
-  if (metricId === COLLAB_UTILIZATION_METRIC) return `Utilização (%) (${{ sum: "soma", avg: "média", count: "contagem" }[agg]})`;
+  if (metricId === HIST_METRIC) return `Horas históricas (${AGG_LABELS[agg]})`;
+  if (metricId === TIME_METRIC) return `Horas rastreadas (${AGG_LABELS[agg]})`;
+  if (metricId === COLLAB_COST_METRIC) return `Custo (R$) (${AGG_LABELS[agg]})`;
+  if (metricId === COLLAB_CAPACITY_METRIC) return `Capacidade disponível (h) (${AGG_LABELS[agg]})`;
+  if (metricId === COLLAB_UTILIZATION_METRIC) return `Utilização (%) (${AGG_LABELS[agg]})`;
   if (metricId === "__count__") return "Nº de tasks";
   const field = allFields().find((f) => f.id === metricId);
-  return `${field ? field.name : metricId} (${{ sum: "soma", avg: "média", count: "contagem" }[agg] || ""})`;
+  return `${field ? field.name : metricId} (${AGG_LABELS[agg] || ""})`;
 }
 
 // ================= Salvar / carregar dashboards =================

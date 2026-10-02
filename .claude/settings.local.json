@@ -5,7 +5,22 @@
       "Bash(pkill -f \"uvicorn main:app --reload --port 8000\")",
       "Bash(git status *)",
       "Bash(git check-ignore *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git commit --amend -m ' *)",
+      "Bash(git branch *)",
+      "Bash(git checkout *)",
+      "Bash(git reset *)",
+      "Bash(git push *)",
+      "Bash(gh pr *)",
+      "Bash(git ls-remote *)",
+      "Bash(brew install *)",
+      "Bash(gh auth *)",
+      "Bash(git pull *)",
+      "Bash(git stash *)",
+      "Bash(python3 -c ' *)",
+      "Bash(grep -n \"Gráficos: canvas novo\\\\|extraMetrics.length\\) {\\\\|} else if \\(dim2 && chartType\\\\|} else {$\" frontend/app.js)",
+      "Bash(grep -n \"v >= max \\\\* 0.06\\\\|options: {$\" frontend/app.js)"
     ]
   }
 }
